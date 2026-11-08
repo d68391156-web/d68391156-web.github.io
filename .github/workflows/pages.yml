@@ -1,32 +1,49 @@
-name: Publish Japan travel guide
+name: Build and publish Japan travel planner
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Open maintained source archive when needed
+        run: |
+          if [ ! -f package.json ]; then
+            unzip -o japan-travel-source.zip
+          fi
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm build
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: out
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v6
-      - name: Unpack verified static website
-        run: |
-          unzip -q japan-travel-independent-hosting.zip -d public-site
-          base64 --decode currency-update.b64 > /tmp/currency-update.zip
-          unzip -oq /tmp/currency-update.zip -d public-site
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: public-site
-      - name: Publish
+      - uses: actions/deploy-pages@v4
         id: deployment
-        uses: actions/deploy-pages@v4
